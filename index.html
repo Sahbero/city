@@ -1,134 +1,217 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pixel City Tycoon</title>
-<style>
-  body { font-family: sans-serif; text-align: center; }
-  #grid { display: grid; margin: 20px auto; grid-template-columns: repeat(6, 50px); }
-  .tile { width: 50px; height: 50px; border: 1px solid #333; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 10px; }
-  .empty { background: white; }
-  .house { background: lightgreen; }
-  .market { background: lightblue; }
-  .factory { background: lightgray; }
-  .powerplant { background: yellow; }
-  .park { background: pink; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piksel Savaşçıları</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: white;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #game-container {
+            border: 2px solid #555;
+            background-color: #000;
+            cursor: crosshair;
+            position: relative;
+        }
+        .pixel-unit {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            image-rendering: pixelated;
+        }
+        .player {
+            background-color: #00ff00; /* Yeşil */
+        }
+        .enemy {
+            background-color: #ff0000; /* Kırmızı */
+        }
+        #ui-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body>
+    <div id="ui-container">
+        <h1>Piksel Savaşçıları</h1>
+        <p>Hareket etmek için ekrana tıklayın. Savaşçınız otomatik olarak saldırır.</p>
+        <p>Puan: <span id="score">0</span> | Can: <span id="health">100</span></p>
+    </div>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+    </div>
 
-<h1>Pixel City Tycoon</h1>
-<div id="stats"></div>
-<div id="grid"></div>
-<button id="endTurn">End Turn</button>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameContainer = document.getElementById('game-container');
+        const scoreSpan = document.getElementById('score');
+        const healthSpan = document.getElementById('health');
 
-<script>
-class Tile {
-  constructor(x,y){
-    this.x = x;
-    this.y = y;
-    this.type = "empty";
-  }
-}
+        // Oyun ayarları
+        const GAME_WIDTH = 800;
+        const GAME_HEIGHT = 600;
+        const PLAYER_SIZE = 20;
+        const ENEMY_SIZE = 15;
+        const PLAYER_SPEED = 3;
+        const ENEMY_SPEED = 1;
+        const SPAWN_INTERVAL = 1000; // Düşman çıkma aralığı (ms)
 
-class Player {
-  constructor(name){
-    this.name = name;
-    this.money = 1000;
-    this.population = 2;
-    this.happiness = 50;
-    this.energy = 5;
-    this.actionPoints = 3;
-  }
-}
+        canvas.width = GAME_WIDTH;
+        canvas.height = GAME_HEIGHT;
 
-class Game {
-  constructor(){
-    this.grid = [];
-    for(let y=0;y<6;y++){
-      const row=[];
-      for(let x=0;x<6;x++) row.push(new Tile(x,y));
-      this.grid.push(row);
-    }
-    this.player = new Player("Berhan");
-    this.turn = 1;
-    this.maxTurns = 12;
-    this.log = [];
-    this.render();
-  }
+        // Oyun durumu
+        let score = 0;
+        let health = 100;
+        let gameOver = false;
 
-  render(){
-    const gridDiv = document.getElementById("grid");
-    gridDiv.innerHTML="";
-    for(const row of this.grid){
-      for(const tile of row){
-        const div = document.createElement("div");
-        div.className="tile "+tile.type;
-        div.textContent=tile.type==="empty"?"":tile.type;
-        div.addEventListener("click",()=>this.build(tile.x,tile.y,"house"));
-        gridDiv.appendChild(div);
-      }
-    }
-    document.getElementById("stats").innerHTML=
-      `Turn: ${this.turn} | Money: ${this.player.money} | Population: ${this.player.population} | Happiness: ${this.player.happiness} | Energy: ${this.player.energy} | Action Points: ${this.player.actionPoints}`;
-  }
+        // Oyuncu nesnesi
+        const player = {
+            x: GAME_WIDTH / 2,
+            y: GAME_HEIGHT / 2,
+            targetX: GAME_WIDTH / 2,
+            targetY: GAME_HEIGHT / 2,
+            speed: PLAYER_SPEED,
+            health: 100
+        };
 
-  build(x,y,type){
-    const tile = this.grid[y][x];
-    if(tile.type!=="empty"){ alert("Tile not empty!"); return;}
-    if(this.player.actionPoints<=0){ alert("No action points!"); return;}
-    const cost=100;
-    if(this.player.money<cost){ alert("Not enough money!"); return;}
-    tile.type=type;
-    this.player.money-=cost;
-    this.player.actionPoints--;
-    this.log.push(`Built ${type} at (${x},${y})`);
-    this.render();
-  }
+        // Düşmanlar dizisi
+        const enemies = [];
+        let lastSpawnTime = 0;
 
-  endTurn(){
-    // Kaynak hesaplama
-    const income = this.player.population*2;
-    this.player.money += income;
+        // Oyun döngüsü
+        function gameLoop(timestamp) {
+            if (gameOver) {
+                alert(`Oyun Bitti! Skorunuz: ${score}`);
+                return;
+            }
 
-    // Nüfus artışı
-    const growth = Math.floor(this.player.happiness/50);
-    this.player.population = Math.min(20,this.player.population+growth);
+            const deltaTime = timestamp - lastSpawnTime;
 
-    // Happiness artışı
-    this.player.happiness = Math.min(100,this.player.happiness+1);
+            // Düşmanları oluşturma
+            if (deltaTime > SPAWN_INTERVAL) {
+                spawnEnemy();
+                lastSpawnTime = timestamp;
+            }
 
-    // Enerji basit mantık
-    const energyProduced = this.grid.flat().filter(t=>t.type==="powerplant").length*5;
-    const energyConsumed = this.grid.flat().filter(t=>["house","market","factory"].includes(t.type)).length*2;
-    const energyFactor = energyProduced>=energyConsumed ? 1 : energyProduced/energyConsumed;
-    if(energyFactor<1) this.player.happiness -=3;
+            update();
+            draw();
 
-    // Rastgele event
-    if(Math.random()<0.15){
-      this.player.happiness +=5;
-      this.log.push("Festival! Happiness +5");
-      alert("Festival! Happiness +5");
-    }
+            requestAnimationFrame(gameLoop);
+        }
 
-    this.player.actionPoints=3;
-    this.turn++;
-    if(this.turn>this.maxTurns){
-      alert(`Game Over! Final Score: ${this.calculateScore()}`);
-      console.log("Action log:", this.log);
-    }
-    this.render();
-  }
+        // Oyun durumunu güncelleme
+        function update() {
+            // Oyuncuyu hedefe doğru hareket ettirme
+            const dx = player.targetX - player.x;
+            const dy = player.targetY - player.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
 
-  calculateScore(){
-    return this.player.money + this.player.population*50 + this.player.happiness*10;
-  }
-}
+            if (distance > player.speed) {
+                player.x += (dx / distance) * player.speed;
+                player.y += (dy / distance) * player.speed;
+            }
 
-const game = new Game();
-document.getElementById("endTurn").addEventListener("click",()=>game.endTurn());
-</script>
+            // Düşmanları güncelleme
+            enemies.forEach((enemy, index) => {
+                // Düşmanın oyuncuya doğru hareketi
+                const edx = player.x - enemy.x;
+                const edy = player.y - enemy.y;
+                const edistance = Math.sqrt(edx * edx + edy * edy);
 
+                enemy.x += (edx / edistance) * ENEMY_SPEED;
+                enemy.y += (edy / edistance) * ENEMY_SPEED;
+
+                // Çarpışma kontrolü (oyuncu ve düşman)
+                if (checkCollision(player, enemy, PLAYER_SIZE, ENEMY_SIZE)) {
+                    health -= 1; // Can azaltma
+                    healthSpan.textContent = health;
+                    if (health <= 0) {
+                        gameOver = true;
+                    }
+                }
+            });
+
+            // Yok olan düşmanları temizleme ve puan kazanma (Basitleştirilmiş: Sadece belli bir süre sonra yok oluyorlar)
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                if (checkCollision(player, enemy, PLAYER_SIZE, ENEMY_SIZE) && enemy.health <= 0) {
+                    enemies.splice(i, 1);
+                    score += 10;
+                    scoreSpan.textContent = score;
+                }
+                
+                // Basit saldırı mekaniği: Oyuncu ve düşman yakınsa, düşman canı azalır
+                const distanceToPlayer = Math.sqrt(Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2));
+                if (distanceToPlayer < 100) {
+                    enemy.health -= 0.1; // Düşman canını yavaşça azalt
+                }
+            }
+        }
+
+        // Oyunu çizme
+        function draw() {
+            // Arka planı temizle
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // Oyuncuyu çiz
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(player.x - PLAYER_SIZE / 2, player.y - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
+
+            // Düşmanları çiz
+            enemies.forEach(enemy => {
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(enemy.x - ENEMY_SIZE / 2, enemy.y - ENEMY_SIZE / 2, ENEMY_SIZE, ENEMY_SIZE);
+            });
+        }
+
+        // Yeni düşman oluşturma
+        function spawnEnemy() {
+            let x, y;
+            // Ekranın kenarlarında düşman oluştur
+            if (Math.random() > 0.5) {
+                x = Math.random() < 0.5 ? 0 : GAME_WIDTH;
+                y = Math.random() * GAME_HEIGHT;
+            } else {
+                x = Math.random() * GAME_WIDTH;
+                y = Math.random() < 0.5 ? 0 : GAME_HEIGHT;
+            }
+
+            enemies.push({
+                x: x,
+                y: y,
+                health: 5
+            });
+        }
+
+        // Çarpışma kontrolü fonksiyonu
+        function checkCollision(obj1, obj2, size1, size2) {
+            const dx = obj1.x - obj2.x;
+            const dy = obj1.y - obj2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < (size1 / 2 + size2 / 2);
+        }
+
+        // Tıklama olay dinleyicisi
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            player.targetX = event.clientX - rect.left;
+            player.targetY = event.clientY - rect.top;
+        });
+
+        // Oyunu başlat
+        lastSpawnTime = performance.now();
+        gameLoop(lastSpawnTime);
+    </script>
 </body>
 </html>
