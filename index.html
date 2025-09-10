@@ -2,33 +2,45 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Elma Sapanı</title>
+    <title>Elma Sapanı: Tatlı Macerası</title>
     <style>
         body {
-            background-color: #f0f0f0;
+            background-color: #F8F8F8;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
-            font-family: sans-serif;
+            font-family: 'Comic Sans MS', cursive, sans-serif;
             flex-direction: column;
+            color: #555;
         }
         canvas {
-            border: 2px solid #333;
-            background-color: #fff;
+            border: 4px dashed #A0A0A0;
+            background-color: #B2EBF2; /* Pastel mavi gökyüzü */
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.1);
         }
         #ui {
-            margin-top: 20px;
-            font-size: 1.2em;
+            margin-top: 25px;
+            font-size: 1.5em;
             text-align: center;
         }
         #restartButton {
             display: none;
-            margin-top: 10px;
-            padding: 10px 20px;
+            margin-top: 15px;
+            padding: 12px 25px;
             font-size: 1em;
             cursor: pointer;
+            background-color: #FFC107;
+            border: 2px solid #FF9800;
+            border-radius: 20px;
+            color: white;
+            font-weight: bold;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+        #restartButton:hover {
+            transform: scale(1.05);
         }
     </style>
 </head>
@@ -36,7 +48,7 @@
     <canvas id="gameCanvas" width="800" height="400"></canvas>
     <div id="ui">
         <p id="scoreText">Skor: 0</p>
-        <p id="infoText">A/D tuşları ile salla, Boşluk tuşu ile fırlat!</p>
+        <p id="infoText">A/D tuşları ile salla, boşluk tuşu ile fırlat!</p>
         <button id="restartButton">Yeniden Dene</button>
     </div>
 
@@ -50,27 +62,37 @@
         // Oyun Değişkenleri
         let score = 0;
         let gameState = 'ready'; // ready, swinging, flying, gameover
-        let apple = { x: 100, y: 150, radius: 10, color: 'red', vx: 0, vy: 0, isAttached: true, swingAngle: 0, swingVelocity: 0 };
+        let apple = { 
+            x: 150, y: 180, radius: 15, color: '#E57373', 
+            vx: 0, vy: 0, 
+            isAttached: true, 
+            swingAngle: 0.1, 
+            swingVelocity: 0.05, 
+            swingRadius: 60 
+        };
         const gravity = 0.2;
         let power = 0;
-        let powerIncrement = 0.5;
+        const powerIncrement = 0.8;
+        let trajectoryPoints = [];
 
         // Nesne Tanımları
-        const ground = { y: canvas.height - 50 };
-        const firstTree = { x: 100, trunkWidth: 20, trunkHeight: 150, leavesRadius: 40 };
-        const secondTree = { x: 400, trunkWidth: 15, trunkHeight: 120, leavesRadius: 35, score: 10 };
-        const watchtower = { x: 550, width: 50, height: 100, windowX: 565, windowY: 200, windowWidth: 20, windowHeight: 15, score: 25 };
-        const building = { x: 700, width: 80, height: 200, score: 50 };
+        const ground = { y: canvas.height - 70, color: '#C8E6C9' }; // Yumuşak yeşil zemin
+        const firstTree = { x: 150, trunkWidth: 25, trunkHeight: 180, leavesRadius: 50 };
+        const secondTree = { x: 450, trunkWidth: 20, trunkHeight: 150, leavesRadius: 45, score: 10 };
+        const watchtower = { x: 580, width: 60, height: 120, score: 25 };
+        const building = { x: 700, width: 90, height: 220, score: 50 };
 
         // Klavye Kontrolleri
         document.addEventListener('keydown', (e) => {
             if (gameState === 'swinging') {
                 if (e.key === 'a' || e.key === 'A') {
                     power += powerIncrement;
+                    apple.swingVelocity += 0.005;
                     infoText.innerText = `Güç: ${Math.floor(power)}`;
                 }
                 if (e.key === 'd' || e.key === 'D') {
                     power += powerIncrement;
+                    apple.swingVelocity -= 0.005;
                     infoText.innerText = `Güç: ${Math.floor(power)}`;
                 }
                 if (e.key === ' ' && power > 0) {
@@ -84,41 +106,39 @@
         function resetGame() {
             score = 0;
             scoreText.innerText = `Skor: 0`;
-            infoText.innerText = `A/D tuşları ile salla, Boşluk tuşu ile fırlat!`;
+            infoText.innerText = `A/D tuşları ile salla, boşluk tuşu ile fırlat!`;
             restartButton.style.display = 'none';
-            apple.x = 100;
-            apple.y = 150;
+            apple.x = firstTree.x;
+            apple.y = firstTree.y;
             apple.vx = 0;
             apple.vy = 0;
             apple.isAttached = true;
-            apple.swingAngle = Math.PI / 4; // Başlangıç sallanma açısı
-            apple.swingVelocity = 0.02; // Başlangıç sallanma hızı
+            apple.swingAngle = Math.PI / 2;
+            apple.swingVelocity = 0.005;
             power = 0;
+            trajectoryPoints = [];
             gameState = 'swinging';
             gameLoop();
         }
 
         function launchApple() {
             apple.isAttached = false;
-            apple.vx = Math.cos(apple.swingAngle) * power * 0.15;
-            apple.vy = Math.sin(apple.swingAngle) * power * 0.15;
+            // Açısal hızdan fırlatma vektörünü hesapla
+            const launchAngle = apple.swingAngle + Math.PI / 2;
+            apple.vx = Math.cos(launchAngle) * power * 0.2;
+            apple.vy = Math.sin(launchAngle) * power * 0.2;
             infoText.innerText = 'Elma fırlatıldı!';
             gameState = 'flying';
         }
 
         function draw() {
-            // Arkaplanı temizle
+            // Arkaplanı temizle ve zemini çiz
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Zemini çiz
-            ctx.beginPath();
-            ctx.moveTo(0, ground.y);
-            ctx.lineTo(canvas.width, ground.y);
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            ctx.fillStyle = ground.color;
+            ctx.fillRect(0, ground.y, canvas.width, canvas.height - ground.y);
 
             // Birinci Ağacı Çiz
-            drawTree(firstTree.x, ground.y, firstTree.trunkWidth, firstTree.trunkHeight, firstTree.leavesRadius);
+            drawTree(firstTree.x, ground.y, firstTree.trunkWidth, firstTree.trunkHeight, firstTree.leavesRadius, true);
 
             // İkinci Ağacı Çiz
             drawTree(secondTree.x, ground.y, secondTree.trunkWidth, secondTree.trunkHeight, secondTree.leavesRadius);
@@ -128,108 +148,119 @@
 
             // Binayı Çiz
             drawBuilding(building.x, ground.y, building.width, building.height);
+            
+            // Yörünge çizimi
+            if (gameState === 'flying' && trajectoryPoints.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(trajectoryPoints[0].x, trajectoryPoints[0].y);
+                for (let i = 1; i < trajectoryPoints.length; i++) {
+                    ctx.lineTo(trajectoryPoints[i].x, trajectoryPoints[i].y);
+                }
+                ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
 
             // Elmaları çiz
             drawApple();
         }
 
-        function drawTree(x, groundY, trunkWidth, trunkHeight, leavesRadius) {
+        function drawTree(x, groundY, trunkWidth, trunkHeight, leavesRadius, hasApple = false) {
             // Gövde
-            ctx.fillStyle = '#8B4513';
+            ctx.fillStyle = '#8D6E63';
             ctx.fillRect(x - trunkWidth / 2, groundY - trunkHeight, trunkWidth, trunkHeight);
             
             // Yapraklar
-            ctx.fillStyle = '#228B22';
+            ctx.fillStyle = '#66BB6A';
             ctx.beginPath();
             ctx.arc(x, groundY - trunkHeight, leavesRadius, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = '#006400';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#388E3C';
+            ctx.lineWidth = 4;
             ctx.stroke();
         }
 
         function drawWatchtower(x, groundY, width, height) {
             // Ayaklar
-            ctx.strokeStyle = '#A0522D';
-            ctx.lineWidth = 5;
+            ctx.strokeStyle = '#D4C4A0';
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(x - width / 2, groundY);
-            ctx.lineTo(x, groundY - height / 2);
+            ctx.lineTo(x, groundY - height);
             ctx.moveTo(x + width / 2, groundY);
-            ctx.lineTo(x, groundY - height / 2);
+            ctx.lineTo(x, groundY - height);
             ctx.stroke();
 
             // Kabin
-            ctx.fillStyle = '#D2B48C';
+            ctx.fillStyle = '#D4C4A0';
             ctx.fillRect(x - width / 2, groundY - height - 10, width, height / 2 + 10);
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#5D4037';
+            ctx.lineWidth = 3;
             ctx.strokeRect(x - width / 2, groundY - height - 10, width, height / 2 + 10);
 
             // Pencere
-            ctx.fillStyle = '#87CEEB';
+            ctx.fillStyle = '#A1C7D2';
             ctx.fillRect(x - 10, groundY - height / 2 - 20, 20, 15);
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#5D4037';
+            ctx.lineWidth = 2;
             ctx.strokeRect(x - 10, groundY - height / 2 - 20, 20, 15);
         }
 
         function drawBuilding(x, groundY, width, height) {
-            ctx.strokeStyle = '#000';
-            ctx.fillStyle = '#D3D3D3';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#757575';
+            ctx.fillStyle = '#BDBDBD';
+            ctx.lineWidth = 3;
             ctx.strokeRect(x, groundY - height, width, height);
             ctx.fillRect(x, groundY - height, width, height);
 
             // Pencereler
-            const windowW = 20;
-            const windowH = 30;
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(x + 10, groundY - height + 10, windowW, windowH);
-            ctx.fillRect(x + 50, groundY - height + 10, windowW, windowH);
-            ctx.fillRect(x + 10, groundY - height + 50, windowW, windowH);
-            ctx.fillRect(x + 50, groundY - height + 50, windowW, windowH);
+            const windowW = 25;
+            const windowH = 35;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(x + 15, groundY - height + 15, windowW, windowH);
+            ctx.fillRect(x + 50, groundY - height + 15, windowW, windowH);
+            ctx.fillRect(x + 15, groundY - height + 65, windowW, windowH);
+            ctx.fillRect(x + 50, groundY - height + 65, windowW, windowH);
         }
 
         function drawApple() {
             if (apple.isAttached) {
-                // Sallanan elma
+                // Sallanan ip
                 ctx.beginPath();
-                ctx.moveTo(firstTree.x, firstTree.y);
+                ctx.moveTo(firstTree.x, ground.y - firstTree.trunkHeight + 5);
                 ctx.lineTo(apple.x, apple.y);
-                ctx.strokeStyle = '#000';
+                ctx.strokeStyle = '#A0A0A0';
+                ctx.lineWidth = 2;
                 ctx.stroke();
-                
-                // Kırmızı elma
-                ctx.fillStyle = apple.color;
-                ctx.beginPath();
-                ctx.arc(apple.x, apple.y, apple.radius, 0, Math.PI * 2);
-                ctx.fill();
-            } else {
-                // Fırlatılan elma
-                ctx.fillStyle = apple.color;
-                ctx.beginPath();
-                ctx.arc(apple.x, apple.y, apple.radius, 0, Math.PI * 2);
-                ctx.fill();
             }
+
+            // Kırmızı elma
+            ctx.fillStyle = apple.color;
+            ctx.beginPath();
+            ctx.arc(apple.x, apple.y, apple.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#C62828';
+            ctx.lineWidth = 3;
+            ctx.stroke();
         }
 
         function update() {
             if (gameState === 'swinging') {
-                // Sallama hareketini hesapla
+                // Elma salınımı
                 apple.swingAngle += apple.swingVelocity;
-                // Sallanma genliğini koru
-                if (apple.swingAngle > Math.PI / 2 || apple.swingAngle < 0) {
+                if (apple.swingAngle > Math.PI || apple.swingAngle < 0) {
                     apple.swingVelocity *= -1;
                 }
-                apple.x = firstTree.x + Math.sin(apple.swingAngle) * 50;
-                apple.y = firstTree.y + Math.cos(apple.swingAngle) * 50;
+                apple.x = firstTree.x + Math.sin(apple.swingAngle) * apple.swingRadius;
+                apple.y = (ground.y - firstTree.trunkHeight + 5) + Math.cos(apple.swingAngle) * apple.swingRadius;
 
             } else if (gameState === 'flying') {
                 // Fırlatılan elmayı güncelle
                 apple.vy += gravity;
                 apple.x += apple.vx;
                 apple.y += apple.vy;
+                trajectoryPoints.push({ x: apple.x, y: apple.y });
 
                 // Çarpışma kontrolü
                 checkCollision();
