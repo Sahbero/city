@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixel City Tycoon</title>
+<style>
+  body { font-family: sans-serif; text-align: center; }
+  #grid { display: grid; margin: 20px auto; grid-template-columns: repeat(6, 50px); }
+  .tile { width: 50px; height: 50px; border: 1px solid #333; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 10px; }
+  .empty { background: white; }
+  .house { background: lightgreen; }
+  .market { background: lightblue; }
+  .factory { background: lightgray; }
+  .powerplant { background: yellow; }
+  .park { background: pink; }
+</style>
+</head>
+<body>
+
+<h1>Pixel City Tycoon</h1>
+<div id="stats"></div>
+<div id="grid"></div>
+<button id="endTurn">End Turn</button>
+
+<script>
+class Tile {
+  constructor(x,y){
+    this.x = x;
+    this.y = y;
+    this.type = "empty";
+  }
+}
+
+class Player {
+  constructor(name){
+    this.name = name;
+    this.money = 1000;
+    this.population = 2;
+    this.happiness = 50;
+    this.energy = 5;
+    this.actionPoints = 3;
+  }
+}
+
+class Game {
+  constructor(){
+    this.grid = [];
+    for(let y=0;y<6;y++){
+      const row=[];
+      for(let x=0;x<6;x++) row.push(new Tile(x,y));
+      this.grid.push(row);
+    }
+    this.player = new Player("Berhan");
+    this.turn = 1;
+    this.maxTurns = 12;
+    this.log = [];
+    this.render();
+  }
+
+  render(){
+    const gridDiv = document.getElementById("grid");
+    gridDiv.innerHTML="";
+    for(const row of this.grid){
+      for(const tile of row){
+        const div = document.createElement("div");
+        div.className="tile "+tile.type;
+        div.textContent=tile.type==="empty"?"":tile.type;
+        div.addEventListener("click",()=>this.build(tile.x,tile.y,"house"));
+        gridDiv.appendChild(div);
+      }
+    }
+    document.getElementById("stats").innerHTML=
+      `Turn: ${this.turn} | Money: ${this.player.money} | Population: ${this.player.population} | Happiness: ${this.player.happiness} | Energy: ${this.player.energy} | Action Points: ${this.player.actionPoints}`;
+  }
+
+  build(x,y,type){
+    const tile = this.grid[y][x];
+    if(tile.type!=="empty"){ alert("Tile not empty!"); return;}
+    if(this.player.actionPoints<=0){ alert("No action points!"); return;}
+    const cost=100;
+    if(this.player.money<cost){ alert("Not enough money!"); return;}
+    tile.type=type;
+    this.player.money-=cost;
+    this.player.actionPoints--;
+    this.log.push(`Built ${type} at (${x},${y})`);
+    this.render();
+  }
+
+  endTurn(){
+    // Kaynak hesaplama
+    const income = this.player.population*2;
+    this.player.money += income;
+
+    // Nüfus artışı
+    const growth = Math.floor(this.player.happiness/50);
+    this.player.population = Math.min(20,this.player.population+growth);
+
+    // Happiness artışı
+    this.player.happiness = Math.min(100,this.player.happiness+1);
+
+    // Enerji basit mantık
+    const energyProduced = this.grid.flat().filter(t=>t.type==="powerplant").length*5;
+    const energyConsumed = this.grid.flat().filter(t=>["house","market","factory"].includes(t.type)).length*2;
+    const energyFactor = energyProduced>=energyConsumed ? 1 : energyProduced/energyConsumed;
+    if(energyFactor<1) this.player.happiness -=3;
+
+    // Rastgele event
+    if(Math.random()<0.15){
+      this.player.happiness +=5;
+      this.log.push("Festival! Happiness +5");
+      alert("Festival! Happiness +5");
+    }
+
+    this.player.actionPoints=3;
+    this.turn++;
+    if(this.turn>this.maxTurns){
+      alert(`Game Over! Final Score: ${this.calculateScore()}`);
+      console.log("Action log:", this.log);
+    }
+    this.render();
+  }
+
+  calculateScore(){
+    return this.player.money + this.player.population*50 + this.player.happiness*10;
+  }
+}
+
+const game = new Game();
+document.getElementById("endTurn").addEventListener("click",()=>game.endTurn());
+</script>
+
+</body>
+</html>
