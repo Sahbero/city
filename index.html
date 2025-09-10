@@ -2,216 +2,293 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Piksel Savaşçıları</title>
+    <title>Elma Sapanı</title>
     <style>
         body {
-            background-color: #1a1a1a;
-            color: white;
-            font-family: 'Arial', sans-serif;
+            background-color: #f0f0f0;
             display: flex;
             justify-content: center;
             align-items: center;
-            flex-direction: column;
             height: 100vh;
             margin: 0;
-            overflow: hidden;
+            font-family: sans-serif;
+            flex-direction: column;
         }
-        #game-container {
-            border: 2px solid #555;
-            background-color: #000;
-            cursor: crosshair;
-            position: relative;
+        canvas {
+            border: 2px solid #333;
+            background-color: #fff;
         }
-        .pixel-unit {
-            position: absolute;
-            width: 15px;
-            height: 15px;
-            image-rendering: pixelated;
-        }
-        .player {
-            background-color: #00ff00; /* Yeşil */
-        }
-        .enemy {
-            background-color: #ff0000; /* Kırmızı */
-        }
-        #ui-container {
-            text-align: center;
+        #ui {
             margin-top: 20px;
+            font-size: 1.2em;
+            text-align: center;
+        }
+        #restartButton {
+            display: none;
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <div id="ui-container">
-        <h1>Piksel Savaşçıları</h1>
-        <p>Hareket etmek için ekrana tıklayın. Savaşçınız otomatik olarak saldırır.</p>
-        <p>Puan: <span id="score">0</span> | Can: <span id="health">100</span></p>
-    </div>
-    <div id="game-container">
-        <canvas id="gameCanvas"></canvas>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div id="ui">
+        <p id="scoreText">Skor: 0</p>
+        <p id="infoText">A/D tuşları ile salla, Boşluk tuşu ile fırlat!</p>
+        <button id="restartButton">Yeniden Dene</button>
     </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const gameContainer = document.getElementById('game-container');
-        const scoreSpan = document.getElementById('score');
-        const healthSpan = document.getElementById('health');
+        const scoreText = document.getElementById('scoreText');
+        const infoText = document.getElementById('infoText');
+        const restartButton = document.getElementById('restartButton');
 
-        // Oyun ayarları
-        const GAME_WIDTH = 800;
-        const GAME_HEIGHT = 600;
-        const PLAYER_SIZE = 20;
-        const ENEMY_SIZE = 15;
-        const PLAYER_SPEED = 3;
-        const ENEMY_SPEED = 1;
-        const SPAWN_INTERVAL = 1000; // Düşman çıkma aralığı (ms)
-
-        canvas.width = GAME_WIDTH;
-        canvas.height = GAME_HEIGHT;
-
-        // Oyun durumu
+        // Oyun Değişkenleri
         let score = 0;
-        let health = 100;
-        let gameOver = false;
+        let gameState = 'ready'; // ready, swinging, flying, gameover
+        let apple = { x: 100, y: 150, radius: 10, color: 'red', vx: 0, vy: 0, isAttached: true, swingAngle: 0, swingVelocity: 0 };
+        const gravity = 0.2;
+        let power = 0;
+        let powerIncrement = 0.5;
 
-        // Oyuncu nesnesi
-        const player = {
-            x: GAME_WIDTH / 2,
-            y: GAME_HEIGHT / 2,
-            targetX: GAME_WIDTH / 2,
-            targetY: GAME_HEIGHT / 2,
-            speed: PLAYER_SPEED,
-            health: 100
-        };
+        // Nesne Tanımları
+        const ground = { y: canvas.height - 50 };
+        const firstTree = { x: 100, trunkWidth: 20, trunkHeight: 150, leavesRadius: 40 };
+        const secondTree = { x: 400, trunkWidth: 15, trunkHeight: 120, leavesRadius: 35, score: 10 };
+        const watchtower = { x: 550, width: 50, height: 100, windowX: 565, windowY: 200, windowWidth: 20, windowHeight: 15, score: 25 };
+        const building = { x: 700, width: 80, height: 200, score: 50 };
 
-        // Düşmanlar dizisi
-        const enemies = [];
-        let lastSpawnTime = 0;
+        // Klavye Kontrolleri
+        document.addEventListener('keydown', (e) => {
+            if (gameState === 'swinging') {
+                if (e.key === 'a' || e.key === 'A') {
+                    power += powerIncrement;
+                    infoText.innerText = `Güç: ${Math.floor(power)}`;
+                }
+                if (e.key === 'd' || e.key === 'D') {
+                    power += powerIncrement;
+                    infoText.innerText = `Güç: ${Math.floor(power)}`;
+                }
+                if (e.key === ' ' && power > 0) {
+                    launchApple();
+                }
+            }
+        });
 
-        // Oyun döngüsü
-        function gameLoop(timestamp) {
-            if (gameOver) {
-                alert(`Oyun Bitti! Skorunuz: ${score}`);
+        restartButton.addEventListener('click', resetGame);
+
+        function resetGame() {
+            score = 0;
+            scoreText.innerText = `Skor: 0`;
+            infoText.innerText = `A/D tuşları ile salla, Boşluk tuşu ile fırlat!`;
+            restartButton.style.display = 'none';
+            apple.x = 100;
+            apple.y = 150;
+            apple.vx = 0;
+            apple.vy = 0;
+            apple.isAttached = true;
+            apple.swingAngle = Math.PI / 4; // Başlangıç sallanma açısı
+            apple.swingVelocity = 0.02; // Başlangıç sallanma hızı
+            power = 0;
+            gameState = 'swinging';
+            gameLoop();
+        }
+
+        function launchApple() {
+            apple.isAttached = false;
+            apple.vx = Math.cos(apple.swingAngle) * power * 0.15;
+            apple.vy = Math.sin(apple.swingAngle) * power * 0.15;
+            infoText.innerText = 'Elma fırlatıldı!';
+            gameState = 'flying';
+        }
+
+        function draw() {
+            // Arkaplanı temizle
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Zemini çiz
+            ctx.beginPath();
+            ctx.moveTo(0, ground.y);
+            ctx.lineTo(canvas.width, ground.y);
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Birinci Ağacı Çiz
+            drawTree(firstTree.x, ground.y, firstTree.trunkWidth, firstTree.trunkHeight, firstTree.leavesRadius);
+
+            // İkinci Ağacı Çiz
+            drawTree(secondTree.x, ground.y, secondTree.trunkWidth, secondTree.trunkHeight, secondTree.leavesRadius);
+
+            // Kuleyi Çiz
+            drawWatchtower(watchtower.x, ground.y, watchtower.width, watchtower.height);
+
+            // Binayı Çiz
+            drawBuilding(building.x, ground.y, building.width, building.height);
+
+            // Elmaları çiz
+            drawApple();
+        }
+
+        function drawTree(x, groundY, trunkWidth, trunkHeight, leavesRadius) {
+            // Gövde
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(x - trunkWidth / 2, groundY - trunkHeight, trunkWidth, trunkHeight);
+            
+            // Yapraklar
+            ctx.fillStyle = '#228B22';
+            ctx.beginPath();
+            ctx.arc(x, groundY - trunkHeight, leavesRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#006400';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function drawWatchtower(x, groundY, width, height) {
+            // Ayaklar
+            ctx.strokeStyle = '#A0522D';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(x - width / 2, groundY);
+            ctx.lineTo(x, groundY - height / 2);
+            ctx.moveTo(x + width / 2, groundY);
+            ctx.lineTo(x, groundY - height / 2);
+            ctx.stroke();
+
+            // Kabin
+            ctx.fillStyle = '#D2B48C';
+            ctx.fillRect(x - width / 2, groundY - height - 10, width, height / 2 + 10);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x - width / 2, groundY - height - 10, width, height / 2 + 10);
+
+            // Pencere
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(x - 10, groundY - height / 2 - 20, 20, 15);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - 10, groundY - height / 2 - 20, 20, 15);
+        }
+
+        function drawBuilding(x, groundY, width, height) {
+            ctx.strokeStyle = '#000';
+            ctx.fillStyle = '#D3D3D3';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, groundY - height, width, height);
+            ctx.fillRect(x, groundY - height, width, height);
+
+            // Pencereler
+            const windowW = 20;
+            const windowH = 30;
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(x + 10, groundY - height + 10, windowW, windowH);
+            ctx.fillRect(x + 50, groundY - height + 10, windowW, windowH);
+            ctx.fillRect(x + 10, groundY - height + 50, windowW, windowH);
+            ctx.fillRect(x + 50, groundY - height + 50, windowW, windowH);
+        }
+
+        function drawApple() {
+            if (apple.isAttached) {
+                // Sallanan elma
+                ctx.beginPath();
+                ctx.moveTo(firstTree.x, firstTree.y);
+                ctx.lineTo(apple.x, apple.y);
+                ctx.strokeStyle = '#000';
+                ctx.stroke();
+                
+                // Kırmızı elma
+                ctx.fillStyle = apple.color;
+                ctx.beginPath();
+                ctx.arc(apple.x, apple.y, apple.radius, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // Fırlatılan elma
+                ctx.fillStyle = apple.color;
+                ctx.beginPath();
+                ctx.arc(apple.x, apple.y, apple.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function update() {
+            if (gameState === 'swinging') {
+                // Sallama hareketini hesapla
+                apple.swingAngle += apple.swingVelocity;
+                // Sallanma genliğini koru
+                if (apple.swingAngle > Math.PI / 2 || apple.swingAngle < 0) {
+                    apple.swingVelocity *= -1;
+                }
+                apple.x = firstTree.x + Math.sin(apple.swingAngle) * 50;
+                apple.y = firstTree.y + Math.cos(apple.swingAngle) * 50;
+
+            } else if (gameState === 'flying') {
+                // Fırlatılan elmayı güncelle
+                apple.vy += gravity;
+                apple.x += apple.vx;
+                apple.y += apple.vy;
+
+                // Çarpışma kontrolü
+                checkCollision();
+            }
+
+            // Elma yere düşerse
+            if (apple.y + apple.radius >= ground.y) {
+                endGame("Elma yere düştü!");
+            }
+        }
+
+        function checkCollision() {
+            // İkinci ağaç
+            const distToTree = Math.sqrt(Math.pow(apple.x - secondTree.x, 2) + Math.pow(apple.y - (ground.y - secondTree.trunkHeight), 2));
+            if (distToTree < secondTree.leavesRadius + apple.radius) {
+                addScore(secondTree.score);
+                endGame("Ağaca isabet!");
                 return;
             }
 
-            const deltaTime = timestamp - lastSpawnTime;
-
-            // Düşmanları oluşturma
-            if (deltaTime > SPAWN_INTERVAL) {
-                spawnEnemy();
-                lastSpawnTime = timestamp;
+            // Kule
+            if (apple.x > watchtower.x - watchtower.width / 2 && apple.x < watchtower.x + watchtower.width / 2 &&
+                apple.y > ground.y - watchtower.height && apple.y < ground.y) {
+                addScore(watchtower.score);
+                endGame("Kuleye isabet!");
+                return;
             }
 
-            update();
-            draw();
-
-            requestAnimationFrame(gameLoop);
-        }
-
-        // Oyun durumunu güncelleme
-        function update() {
-            // Oyuncuyu hedefe doğru hareket ettirme
-            const dx = player.targetX - player.x;
-            const dy = player.targetY - player.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance > player.speed) {
-                player.x += (dx / distance) * player.speed;
-                player.y += (dy / distance) * player.speed;
-            }
-
-            // Düşmanları güncelleme
-            enemies.forEach((enemy, index) => {
-                // Düşmanın oyuncuya doğru hareketi
-                const edx = player.x - enemy.x;
-                const edy = player.y - enemy.y;
-                const edistance = Math.sqrt(edx * edx + edy * edy);
-
-                enemy.x += (edx / edistance) * ENEMY_SPEED;
-                enemy.y += (edy / edistance) * ENEMY_SPEED;
-
-                // Çarpışma kontrolü (oyuncu ve düşman)
-                if (checkCollision(player, enemy, PLAYER_SIZE, ENEMY_SIZE)) {
-                    health -= 1; // Can azaltma
-                    healthSpan.textContent = health;
-                    if (health <= 0) {
-                        gameOver = true;
-                    }
-                }
-            });
-
-            // Yok olan düşmanları temizleme ve puan kazanma (Basitleştirilmiş: Sadece belli bir süre sonra yok oluyorlar)
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                const enemy = enemies[i];
-                if (checkCollision(player, enemy, PLAYER_SIZE, ENEMY_SIZE) && enemy.health <= 0) {
-                    enemies.splice(i, 1);
-                    score += 10;
-                    scoreSpan.textContent = score;
-                }
-                
-                // Basit saldırı mekaniği: Oyuncu ve düşman yakınsa, düşman canı azalır
-                const distanceToPlayer = Math.sqrt(Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2));
-                if (distanceToPlayer < 100) {
-                    enemy.health -= 0.1; // Düşman canını yavaşça azalt
-                }
+            // Bina
+            if (apple.x > building.x && apple.x < building.x + building.width &&
+                apple.y > ground.y - building.height && apple.y < ground.y) {
+                addScore(building.score);
+                endGame("Binaya isabet!");
+                return;
             }
         }
 
-        // Oyunu çizme
-        function draw() {
-            // Arka planı temizle
-            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-
-            // Oyuncuyu çiz
-            ctx.fillStyle = '#00ff00';
-            ctx.fillRect(player.x - PLAYER_SIZE / 2, player.y - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
-
-            // Düşmanları çiz
-            enemies.forEach(enemy => {
-                ctx.fillStyle = '#ff0000';
-                ctx.fillRect(enemy.x - ENEMY_SIZE / 2, enemy.y - ENEMY_SIZE / 2, ENEMY_SIZE, ENEMY_SIZE);
-            });
+        function addScore(points) {
+            score += points;
+            scoreText.innerText = `Skor: ${score}`;
         }
 
-        // Yeni düşman oluşturma
-        function spawnEnemy() {
-            let x, y;
-            // Ekranın kenarlarında düşman oluştur
-            if (Math.random() > 0.5) {
-                x = Math.random() < 0.5 ? 0 : GAME_WIDTH;
-                y = Math.random() * GAME_HEIGHT;
-            } else {
-                x = Math.random() * GAME_WIDTH;
-                y = Math.random() < 0.5 ? 0 : GAME_HEIGHT;
+        function endGame(message) {
+            infoText.innerText = `Oyun Bitti! ${message}`;
+            restartButton.style.display = 'block';
+            gameState = 'gameover';
+            power = 0;
+        }
+
+        function gameLoop() {
+            if (gameState !== 'gameover') {
+                update();
+                draw();
+                requestAnimationFrame(gameLoop);
             }
-
-            enemies.push({
-                x: x,
-                y: y,
-                health: 5
-            });
         }
-
-        // Çarpışma kontrolü fonksiyonu
-        function checkCollision(obj1, obj2, size1, size2) {
-            const dx = obj1.x - obj2.x;
-            const dy = obj1.y - obj2.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            return distance < (size1 / 2 + size2 / 2);
-        }
-
-        // Tıklama olay dinleyicisi
-        canvas.addEventListener('click', (event) => {
-            const rect = canvas.getBoundingClientRect();
-            player.targetX = event.clientX - rect.left;
-            player.targetY = event.clientY - rect.top;
-        });
 
         // Oyunu başlat
-        lastSpawnTime = performance.now();
-        gameLoop(lastSpawnTime);
+        resetGame();
     </script>
 </body>
 </html>
